@@ -1,4 +1,4 @@
-# validate_pipeline.py
+# validation.py
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -73,7 +73,12 @@ class PipelineValidator:
         try:
             logging.info("\nStarting preprocessor validation...")
             
-            preprocessor = ImagePreprocessor()
+            # Create preprocessor with optimized parameters
+            preprocessor = ImagePreprocessor(
+                gaussian_sigma=1.0,
+                wavelet_sigma=0.1,
+                preserve_features=True
+            )
             start_time = time.time()
             
             # Process batch
@@ -120,17 +125,25 @@ class PipelineValidator:
             galaxy_img = original_batch['galaxy'][i].cpu()
             star_img = original_batch['star'][i].cpu()
             
-            # Denormalize images for visualization
-            galaxy_img = (galaxy_img - galaxy_img.min()) / (galaxy_img.max() - galaxy_img.min())
-            star_img = (star_img - star_img.min()) / (star_img.max() - star_img.min())
+            # Convert to grayscale for better visualization
+            galaxy_img = 0.299 * galaxy_img[0] + 0.587 * galaxy_img[1] + 0.114 * galaxy_img[2]
+            star_img = 0.299 * star_img[0] + 0.587 * star_img[1] + 0.114 * star_img[2]
             
-            axes[0,i*2].imshow(galaxy_img.permute(1,2,0))
+            # Enhance contrast for visualization
+            def enhance_contrast(img):
+                p2, p98 = torch.quantile(img.flatten(), torch.tensor([0.02, 0.98]))
+                return torch.clamp((img - p2) / (p98 - p2), 0, 1)
+            
+            galaxy_img = enhance_contrast(galaxy_img)
+            star_img = enhance_contrast(star_img)
+            
+            axes[0,i*2].imshow(galaxy_img, cmap='gray')
             axes[0,i*2].set_title(f'Original Galaxy {i+1}')
             
-            axes[0,i*2+1].imshow(star_img.permute(1,2,0))
+            axes[0,i*2+1].imshow(star_img, cmap='gray')
             axes[0,i*2+1].set_title(f'Original Star {i+1}')
             
-            # Processed images are already normalized
+            # Processed images
             axes[1,i*2].imshow(processed_batch['processed_galaxies'][i].cpu(), cmap='gray')
             axes[1,i*2].set_title(f'Processed Galaxy {i+1}')
             

@@ -47,7 +47,7 @@ class ImagePreprocessor:
                                      wavelet='db1', 
                                      mode='soft',
                                      sigma=self.wavelet_sigma,
-                                     multichannel=False,
+                                     channel_axis=None,
                                      convert2ycbcr=False)
         else:
             # Traditional Gaussian denoising
@@ -76,23 +76,33 @@ class ImagePreprocessor:
         return convolved
 
     def extract_psf_kernel(self, star_img):
-        """Enhanced PSF kernel extraction"""
-        # Find the center of the star
-        h, w = star_img.shape
-        center_h, center_w = h // 2, w // 2
+        """Improved PSF kernel extraction"""
+        # Find the center of mass
+        y, x = ndimage.center_of_mass(star_img)
+        y, x = int(y), int(x)
         
-        # Dynamic kernel size based on star FWHM
-        intensity_profile = star_img[center_h, :]
+        # Determine kernel size dynamically
+        intensity_profile = star_img[y, :]
         fwhm = np.sum(intensity_profile > np.max(intensity_profile) * 0.5)
-        kernel_size = max(int(fwhm * 2), 16)  # At least 16 pixels
+        kernel_size = max(int(fwhm * 3), 16)  # Increased size for better PSF capture
         
-        # Extract and normalize kernel
-        k_start_h = center_h - kernel_size // 2
-        k_start_w = center_w - kernel_size // 2
-        kernel = star_img[k_start_h:k_start_h + kernel_size,
-                        k_start_w:k_start_w + kernel_size]
+        # Extract kernel with centering
+        half_size = kernel_size // 2
+        y_start = max(0, y - half_size)
+        y_end = min(star_img.shape[0], y + half_size)
+        x_start = max(0, x - half_size)
+        x_end = min(star_img.shape[1], x + half_size)
         
-        return self.normalize_image(kernel)
+        kernel = star_img[y_start:y_end, x_start:x_end]
+        
+        # Ensure kernel is square
+        kernel = cv2.resize(kernel, (kernel_size, kernel_size), interpolation=cv2.INTER_LANCZOS4)
+        
+        # Normalize and smooth edges
+        kernel = self.normalize_image(kernel)
+        kernel = gaussian(kernel, sigma=0.5, preserve_range=True)
+        
+        return kernel
 
     def handle_pixelization(self, image, kernel_size):
         """Improved pixelization with feature preservation"""
